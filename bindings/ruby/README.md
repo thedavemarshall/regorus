@@ -12,12 +12,13 @@ Regorus can be used in Ruby by configuring bundler to build from the remote git 
 
 Use the bundler CLI to add the gem from remote git source:
 `
-bundle add regorus --git 'https://github.com/microsoft/regorus/tree/main/bindings/ruby'
+# requires bundler 2.5.8 or later
+bundle add regorusrb --git "https://github.com/microsoft/regorus" --glob "bindings/ruby/*.gemspec"
 `
 
 or manually edit your gemfile to include the following
 `
-gem "regorus", git: "https://github.com/microsoft/regorus/tree/main/bindings/ruby"
+gem "regorusrb", git: "https://github.com/microsoft/regorus/", glob: "bindings/ruby/*.gemspec"
 `
 
 It is not yet available in rubygems.
