@@ -129,6 +129,26 @@ impl Engine {
             .collect()
     }
 
+    /// Get infomation about loaded policies.
+    ///
+    /// ```
+    /// # use regorus::*;
+    /// # fn main() -> anyhow::Result<()> {
+    /// let mut engine = Engine::new();
+    ///
+    /// let _ = engine.add_policy_from_file("tests/aci/framework.rego")?;
+    ///
+    /// // Package names can be different from file names.
+    /// let _ = engine.add_policy("policy.rego".into(), "package hello.world".into())?;
+    ///
+    /// // assert_eq!(get_modules_info.get_packages()?, vec!["data.framework", "data.hello.world"]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_modules_info(&self) -> Result<Vec<ModuleInfo>> {
+        self.modules.iter().map(|m| m.to_info()).collect()
+    }
+
     /// Set the input document.
     ///
     /// * `input`: Input documented. Typically this [Value] is constructed from JSON or YAML.

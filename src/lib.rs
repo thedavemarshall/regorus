@@ -27,6 +27,7 @@ mod scheduler;
 mod utils;
 mod value;
 
+pub use ast::ModuleInfo;
 pub use engine::Engine;
 pub use value::Value;
 
