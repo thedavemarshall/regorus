@@ -183,6 +183,34 @@ class TestRegorus < Minitest::Test
     assert_equal ["<query.rego>:1: Hello"], @engine.take_prints
   end
 
+  def test_get_packages
+    assert_equal ["data.regorus_test"], @engine.get_packages
+  end
+
+  def test_get_packages_texts
+    assert_equal({ "data.regorus_test" => "package regorus_test" }, @engine.get_packages_texts)
+  end
+
+  def test_get_packages_imports
+    assert_equal({ "data.regorus_test" => [] }, @engine.get_packages_imports)
+  end
+
+  def test_get_packages_policies
+    expected_policies = { "data.regorus_test" => [
+      "is_manager {\n  input.name == data.managers[_]\n}",
+      "is_employee {\n  input.name == data.employees[_]\n}",
+      "default is_manager_bool = false",
+      "default is_employee_bool = false",
+      "is_manager_bool {\n  is_manager\n}", "is_employee_bool {\n  is_employee\n}"
+    ] }
+
+    assert_equal(expected_policies, @engine.get_packages_policies)
+  end
+
+  def test_get_packages_rego_v1
+    assert_equal({ "data.regorus_test" => false }, @engine.get_packages_rego_v1)
+  end
+
   def alice_results
     {
       result: [

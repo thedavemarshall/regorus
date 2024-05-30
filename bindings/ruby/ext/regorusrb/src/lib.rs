@@ -2,6 +2,7 @@ use magnus::{exception::runtime_error, method, module, prelude::*, Error, Ruby};
 use regorus::Engine as RegorusEngine;
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 // `Value` exists under magnus, regorus, and serde_json, so be explicit
 
@@ -263,6 +264,48 @@ impl Engine {
             .get_packages()
             .map_err(|e| Error::new(runtime_error(), format!("Failed to get packages: {}", e)))
     }
+
+    pub fn get_packages_texts(&self) -> Result<HashMap<String, String>, Error> {
+        self.engine.borrow_mut().get_packages_texts().map_err(|e| {
+            Error::new(
+                runtime_error(),
+                format!("Failed to get package texts: {}", e),
+            )
+        })
+    }
+
+    pub fn get_packages_imports(&self) -> Result<HashMap<String, Vec<String>>, Error> {
+        self.engine
+            .borrow_mut()
+            .get_packages_imports()
+            .map_err(|e| {
+                Error::new(
+                    runtime_error(),
+                    format!("Failed to get package imports: {}", e),
+                )
+            })
+    }
+
+    pub fn get_packages_policies(&self) -> Result<HashMap<String, Vec<String>>, Error> {
+        self.engine
+            .borrow_mut()
+            .get_packages_policies()
+            .map_err(|e| {
+                Error::new(
+                    runtime_error(),
+                    format!("Failed to get package policies: {}", e),
+                )
+            })
+    }
+
+    pub fn get_packages_rego_v1(&self) -> Result<HashMap<String, bool>, Error> {
+        self.engine.borrow_mut().get_package_rego_v1().map_err(|e| {
+            Error::new(
+                runtime_error(),
+                format!("Failed to get package rego v1: {}", e),
+            )
+        })
+    }
 }
 
 #[magnus::init]
@@ -334,6 +377,19 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // policy module management and metadata
     engine_class.define_method("get_packages", method!(Engine::get_packages, 0))?;
+    engine_class.define_method("get_packages_texts", method!(Engine::get_packages_texts, 0))?;
+    engine_class.define_method(
+        "get_packages_imports",
+        method!(Engine::get_packages_imports, 0),
+    )?;
+    engine_class.define_method(
+        "get_packages_policies",
+        method!(Engine::get_packages_policies, 0),
+    )?;
+    engine_class.define_method(
+        "get_packages_rego_v1",
+        method!(Engine::get_packages_rego_v1, 0),
+    )?;
 
     Ok(())
 }
