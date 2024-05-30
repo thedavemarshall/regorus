@@ -263,15 +263,6 @@ impl Engine {
             .get_packages()
             .map_err(|e| Error::new(runtime_error(), format!("Failed to get packages: {}", e)))
     }
-
-    // fn get_modules_info(&self) -> Result<Vec<ModuleInfo>, Error> {
-    //     self.engine.borrow_mut().get_modules_info().map_err(|e| {
-    //         Error::new(
-    //             runtime_error(),
-    //             format!("Failed to get modules info: {}", e),
-    //         )
-    //     })
-    // }
 }
 
 #[magnus::init]
@@ -341,8 +332,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     engine_class.define_method("set_gather_prints", method!(Engine::set_gather_prints, 1))?;
     engine_class.define_method("take_prints", method!(Engine::take_prints, 0))?;
 
-    // policy module management
+    // policy module management and metadata
     engine_class.define_method("get_packages", method!(Engine::get_packages, 0))?;
-    // engine_class.define_method("get_modules_info", method!(Engine::get_modules_info, 0))?;
+
     Ok(())
 }

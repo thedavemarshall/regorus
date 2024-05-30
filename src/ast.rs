@@ -357,36 +357,4 @@ pub struct Module {
     pub rego_v1: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub struct ModuleInfo {
-    package: String,
-    imports: Vec<String>,
-    policy: Vec<String>,
-    rego_v1: bool,
-}
-
-impl Module {
-    pub fn to_info(&self) -> anyhow::Result<ModuleInfo> {
-        let package = self.package.span.text().to_string();
-        let imports: Result<Vec<String>, anyhow::Error> = self
-            .imports
-            .iter()
-            .map(|import| Ok(import.span.text().to_string()))
-            .collect();
-
-        let policy: Result<Vec<String>, anyhow::Error> = self
-            .policy
-            .iter()
-            .map(|rule_ref| Ok(rule_ref.span().text().to_string()))
-            .collect();
-
-        Ok(ModuleInfo {
-            package,
-            imports: imports?,
-            policy: policy?,
-            rego_v1: self.rego_v1,
-        })
-    }
-}
-
 pub type ExprRef = Ref<Expr>;

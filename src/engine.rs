@@ -129,24 +129,59 @@ impl Engine {
             .collect()
     }
 
-    /// Get infomation about loaded policies.
-    ///
-    /// ```
-    /// # use regorus::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// let mut engine = Engine::new();
-    ///
-    /// let _ = engine.add_policy_from_file("tests/aci/framework.rego")?;
-    ///
-    /// // Package names can be different from file names.
-    /// let _ = engine.add_policy("policy.rego".into(), "package hello.world".into())?;
-    ///
-    /// // assert_eq!(get_modules_info.get_packages()?, vec!["data.framework", "data.hello.world"]);
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn get_modules_info(&self) -> Result<Vec<ModuleInfo>> {
-        self.modules.iter().map(|m| m.to_info()).collect()
+    pub fn get_packages_texts(&self) -> Result<Map<String, String>> {
+        let mut packages_text: Map<String, String> = Map::new();
+
+        for module in &self.modules {
+            let path_string = Interpreter::get_path_string(&module.package.refr, Some("data"))?;
+            let package_text = module.package.span.text().to_string();
+            packages_text.insert(path_string, package_text);
+        }
+
+        Ok(packages_text)
+    }
+
+    pub fn get_packages_imports(&self) -> Result<Map<String, Vec<String>>> {
+        let mut packages_imports: Map<String, Vec<String>> = Map::new();
+
+        for module in &self.modules {
+            let path_string = Interpreter::get_path_string(&module.package.refr, Some("data"))?;
+            let import_strings: Result<Vec<String>> = module
+                .imports
+                .iter()
+                .map(|import| Ok(import.span.text().to_string()))
+                .collect();
+            packages_imports.insert(path_string, import_strings?);
+        }
+
+        Ok(packages_imports)
+    }
+
+    pub fn get_packages_policies(&self) -> Result<Map<String, Vec<String>>> {
+        let mut packages_policies: Map<String, Vec<String>> = Map::new();
+
+        for module in &self.modules {
+            let path_string = Interpreter::get_path_string(&module.package.refr, Some("data"))?;
+            let policy_strings: Result<Vec<String>> = module
+                .policy
+                .iter()
+                .map(|policy| Ok(policy.span().text().to_string()))
+                .collect();
+            packages_policies.insert(path_string, policy_strings?);
+        }
+
+        Ok(packages_policies)
+    }
+
+    pub fn get_package_rego_v1(&self) -> Result<Map<String, bool>> {
+        let mut packages_rego_v1s: Map<String, bool> = Map::new();
+
+        for module in &self.modules {
+            let path_string = Interpreter::get_path_string(&module.package.refr, Some("data"))?;
+            packages_rego_v1s.insert(path_string, module.rego_v1);
+        }
+
+        Ok(packages_rego_v1s)
     }
 
     /// Set the input document.
