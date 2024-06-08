@@ -183,6 +183,22 @@ class TestRegorus < Minitest::Test
     assert_equal ["<query.rego>:1: Hello"], @engine.take_prints
   end
 
+  def test_get_ast_as_json_source
+    ast_json = JSON.parse(@engine.get_ast_as_json).first
+
+    assert_equal "regorus_test.rego", ast_json["source"]["file"]
+    assert_match "is_manager {\n  input.name == data.managers[_]\n}", ast_json["source"]["contents"]
+  end
+
+  def test_get_ast_as_json_ast
+    ast_json = JSON.parse(@engine.get_ast_as_json).first
+
+    assert_equal ["imports", "package", "rego_v1", "rules"], ast_json["ast"].keys.sort
+    assert_equal 6, ast_json["ast"]["rules"].count
+
+    assert_equal "is_manager", ast_json.dig("ast", "rules", 0, "Spec", "head", "Compr", "refr", "Var", -1)
+  end
+
   def alice_results
     {
       result: [
