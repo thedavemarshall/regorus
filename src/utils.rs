@@ -78,7 +78,10 @@ pub fn get_extra_arg(
     module: Option<&str>,
     functions: &FunctionTable,
 ) -> Option<Ref<Expr>> {
-    get_extra_arg_impl(expr, module, functions).unwrap_or_default()
+    match get_extra_arg_impl(expr, module, functions) {
+        Ok(a) => a,
+        _ => None,
+    }
 }
 
 pub fn gather_functions(modules: &[Ref<Module>]) -> Result<FunctionTable> {

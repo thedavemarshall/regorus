@@ -33,7 +33,6 @@ fn add_policy_from_file(engine: &mut regorus::Engine, path: String) -> Result<St
     engine.add_policy(path.clone(), read_file(&path)?)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rego_eval(
     bundles: &[String],
     files: &[String],
@@ -42,7 +41,6 @@ fn rego_eval(
     enable_tracing: bool,
     non_strict: bool,
     #[cfg(feature = "coverage")] coverage: bool,
-    v1: bool,
 ) -> Result<()> {
     // Create engine.
     let mut engine = regorus::Engine::new();
@@ -51,8 +49,6 @@ fn rego_eval(
 
     #[cfg(feature = "coverage")]
     engine.set_enable_coverage(coverage);
-
-    engine.set_rego_v1(v1);
 
     // Load files from given bundles.
     for dir in bundles.iter() {
@@ -119,7 +115,7 @@ fn rego_eval(
     #[cfg(feature = "coverage")]
     if coverage {
         let report = engine.get_coverage_report()?;
-        println!("{}", report.to_string_pretty()?);
+        println!("{}", report.to_colored_string()?);
     }
 
     Ok(())
@@ -174,40 +170,8 @@ fn rego_parse(file: String) -> Result<()> {
     Ok(())
 }
 
-#[allow(unused_variables)]
-fn rego_ast(file: String) -> Result<()> {
-    #[cfg(feature = "ast")]
-    {
-        // Create engine.
-        let mut engine = regorus::Engine::new();
-
-        // Create source.
-        #[cfg(feature = "std")]
-        engine.add_policy_from_file(file)?;
-
-        #[cfg(not(feature = "std"))]
-        engine.add_policy(file.clone(), read_file(&file)?)?;
-
-        let ast = engine.get_ast_as_json()?;
-
-        println!("{ast}");
-        Ok(())
-    }
-
-    #[cfg(not(feature = "ast"))]
-    {
-        bail!("`ast` feature must be enabled");
-    }
-}
-
 #[derive(clap::Subcommand)]
 enum RegorusCommand {
-    /// Parse a Rego policy and dump AST.
-    Ast {
-        /// Rego policy file.
-        file: String,
-    },
-
     /// Evaluate a Rego Query.
     Eval {
         /// Directories containing Rego files.
@@ -237,10 +201,6 @@ enum RegorusCommand {
         #[cfg(feature = "coverage")]
         #[arg(long, short)]
         coverage: bool,
-
-        /// Turn on rego.v1
-        #[arg(long)]
-        v1: bool,
     },
 
     /// Tokenize a Rego policy.
@@ -282,7 +242,6 @@ fn main() -> Result<()> {
             non_strict,
             #[cfg(feature = "coverage")]
             coverage,
-            v1,
         } => rego_eval(
             &bundles,
             &data,
@@ -292,10 +251,8 @@ fn main() -> Result<()> {
             non_strict,
             #[cfg(feature = "coverage")]
             coverage,
-            v1,
         ),
         RegorusCommand::Lex { file, verbose } => rego_lex(file, verbose),
         RegorusCommand::Parse { file } => rego_parse(file),
-        RegorusCommand::Ast { file } => rego_ast(file),
     }
 }

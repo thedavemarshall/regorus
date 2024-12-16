@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
 const OPA_REPO: &str = "https://github.com/open-policy-agent/opa";
-const OPA_BRANCH: &str = "v0.70.0";
+const OPA_BRANCH: &str = "v0.64.0";
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
@@ -51,13 +51,11 @@ struct YamlTest {
     cases: Vec<TestCase>,
 }
 
-fn eval_test_case(case: &TestCase, is_rego_v1_test: bool) -> Result<Value> {
+fn eval_test_case(case: &TestCase) -> Result<Value> {
     let mut engine = Engine::new();
 
     #[cfg(feature = "coverage")]
     engine.set_enable_coverage(true);
-
-    engine.set_rego_v1(is_rego_v1_test);
 
     if let Some(data) = &case.data {
         engine.add_data(data.clone())?;
@@ -174,7 +172,6 @@ fn run_opa_tests(opa_tests_dir: String, folders: &[String]) -> Result<()> {
             continue;
         }
 
-        let is_rego_v1_test = path_dir_str.starts_with("v1/") || path_dir.starts_with("v1\\");
         let entry = status.entry(path_dir_str).or_insert((0, 0, 0));
 
         let yaml_str = std::fs::read_to_string(&path_str)?;
@@ -219,7 +216,7 @@ fn run_opa_tests(opa_tests_dir: String, folders: &[String]) -> Result<()> {
 
             print!("{:4}: {:90}", entry.2, case.note);
             entry.2 += 1;
-            match (eval_test_case(&case, is_rego_v1_test), &case.want_result) {
+            match (eval_test_case(&case), &case.want_result) {
                 (Ok(actual), Some(expected))
                     if is_json_schema_test && json_schema_tests_check(&actual, &expected) =>
                 {
@@ -328,9 +325,9 @@ fn run_opa_tests(opa_tests_dir: String, folders: &[String]) -> Result<()> {
     if npass == 0 && nfail == 0 {
         bail!("no matching tests found.");
     } else if nfail == 0 {
-        println!("\x1b[32m    {:40}: {npass:4} {nfail:4}\x1b[0m", "TOTAL");
+        println!("\x1b[32m    {:42}: {npass:4} {nfail:4}\x1b[0m", "TOTAL");
     } else {
-        println!("\x1b[31m    {:40}: {npass:4} {nfail:4}\x1b[0m", "TOTAL");
+        println!("\x1b[31m    {:42}: {npass:4} {nfail:4}\x1b[0m", "TOTAL");
     }
 
     if !missing_functions.is_empty() {

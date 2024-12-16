@@ -1,6 +1,6 @@
 [package]
 name = "regoruspy"
-version = "0.2.2"
+version = "0.1.5"
 edition = "2021"
 repository = "https://github.com/microsoft/regorus/bindings/python"
 description = "Python bindings for Regorus - a fast, lightweight Rego interpreter written in Rust"
@@ -11,15 +11,10 @@ keywords = ["interpreter", "opa", "policy-as-code", "rego"]
 [lib]
 crate-type = ["cdylib"]
 
-[features]
-default = ["ast", "coverage", "regorus/std", "regorus/full-opa"]
-ast = ["regorus/ast"]
-coverage = ["regorus/coverage"]
-
 [dependencies]
 anyhow = "1.0"
 ordered-float = "4.2.0"
-pyo3 = {version = "0.22.0", features = ["anyhow", "extension-module"] }
-regorus = { path  = "../..", default-features = false, features = ["arc"] }
+pyo3 = {version = "0.21.0", features = ["anyhow", "extension-module"] }
+regorus = { path  = "../.." }
 serde_json = "1.0.112"
 

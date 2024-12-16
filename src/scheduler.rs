@@ -258,12 +258,6 @@ pub fn traverse(expr: &Ref<Expr>, f: &mut dyn FnMut(&Ref<Expr>) -> Result<bool>)
             traverse(rhs, f)?;
         }
 
-        #[cfg(feature = "rego-extensions")]
-        OrExpr { lhs, rhs, .. } => {
-            traverse(lhs, f)?;
-            traverse(rhs, f)?;
-        }
-
         Membership {
             key,
             value,
@@ -392,9 +386,7 @@ pub struct Analyzer {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Schedule {
-    #[allow(unused)]
     pub scopes: BTreeMap<Ref<Query>, Scope>,
     pub order: BTreeMap<Ref<Query>, Vec<u16>>,
 }
@@ -418,7 +410,7 @@ impl Analyzer {
     }
 
     pub fn analyze(mut self, modules: &[Ref<Module>]) -> Result<Schedule> {
-        self.add_rules_and_aliases(modules)?;
+        self.add_rules(modules)?;
         self.functions = gather_functions(modules)?;
 
         for m in modules {
@@ -436,7 +428,7 @@ impl Analyzer {
         modules: &[Ref<Module>],
         query: &Ref<Query>,
     ) -> Result<Schedule> {
-        self.add_rules_and_aliases(modules)?;
+        self.add_rules(modules)?;
         self.analyze_query(None, None, query, Scope::default())?;
 
         Ok(Schedule {
@@ -445,7 +437,7 @@ impl Analyzer {
         })
     }
 
-    fn add_rules_and_aliases(&mut self, modules: &[Ref<Module>]) -> Result<()> {
+    fn add_rules(&mut self, modules: &[Ref<Module>]) -> Result<()> {
         for m in modules {
             let path = get_path_string(&m.package.refr, Some("data"))?;
             let scope: &mut Scope = self.packages.entry(path).or_default();
@@ -461,12 +453,6 @@ impl Analyzer {
                     } => get_root_var(refr)?,
                 };
                 scope.unscoped.insert(var);
-            }
-
-            for import in &m.imports {
-                if let Some(var) = &import.r#as {
-                    scope.unscoped.insert(var.source_str());
-                }
             }
         }
 

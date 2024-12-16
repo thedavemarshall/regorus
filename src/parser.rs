@@ -40,18 +40,6 @@ impl<'source> Parser<'source> {
         })
     }
 
-    pub fn enable_rego_v1(&mut self) -> Result<()> {
-        self.turn_on_rego_v1(self.tok.1.clone())
-    }
-
-    fn turn_on_rego_v1(&mut self, span: Span) -> Result<()> {
-        self.rego_v1 = true;
-        for kw in FUTURE_KEYWORDS {
-            self.set_future_keyword(kw, &span)?;
-        }
-        Ok(())
-    }
-
     pub fn token_text(&self) -> &str {
         match self.tok.0 {
             TokenKind::Symbol | TokenKind::Number | TokenKind::Ident | TokenKind::Eof => {
@@ -499,7 +487,7 @@ impl<'source> Parser<'source> {
 
     fn parse_parens_expr(&mut self) -> Result<Expr> {
         self.next_token()?;
-        let expr = self.parse_expr()?;
+        let expr = self.parse_membership_expr()?;
         self.expect(")", "while parsing parenthesized expression")?;
         //TODO: if needed introduce a parens-expr node or adjust expr's span.
         Ok(expr)
@@ -700,7 +688,7 @@ impl<'source> Parser<'source> {
         }
     }
 
-    fn parse_set_intersection_expr(&mut self) -> Result<Expr> {
+    fn parse_and_expr(&mut self) -> Result<Expr> {
         let start = self.tok.1.start;
         let mut expr = self.parse_arith_expr()?;
 
@@ -712,7 +700,7 @@ impl<'source> Parser<'source> {
             span.end = self.end;
             expr = Expr::BinExpr {
                 span,
-                op: BinOp::Intersection,
+                op: BinOp::And,
                 lhs: Ref::new(expr),
                 rhs: Ref::new(right),
             };
@@ -720,19 +708,19 @@ impl<'source> Parser<'source> {
         Ok(expr)
     }
 
-    fn parse_set_union_expr(&mut self) -> Result<Expr> {
+    fn parse_or_expr(&mut self) -> Result<Expr> {
         let start = self.tok.1.start;
-        let mut expr = self.parse_set_intersection_expr()?;
+        let mut expr = self.parse_and_expr()?;
 
         while self.token_text() == "|" {
             let mut span = self.tok.1.clone();
             span.start = start;
             self.next_token()?;
-            let right = self.parse_set_intersection_expr()?;
+            let right = self.parse_and_expr()?;
             span.end = self.end;
             expr = Expr::BinExpr {
                 span,
-                op: BinOp::Union,
+                op: BinOp::Or,
                 lhs: Ref::new(expr),
                 rhs: Ref::new(right),
             };
@@ -742,7 +730,7 @@ impl<'source> Parser<'source> {
 
     fn parse_bool_expr(&mut self) -> Result<Expr> {
         let start = self.tok.1.start;
-        let mut expr = self.parse_set_union_expr()?;
+        let mut expr = self.parse_or_expr()?;
         loop {
             let mut span = self.tok.1.clone();
             span.start = start;
@@ -756,7 +744,7 @@ impl<'source> Parser<'source> {
                 _ => break,
             };
             self.next_token()?;
-            let right = self.parse_set_union_expr()?;
+            let right = self.parse_or_expr()?;
             span.end = self.end;
             expr = Expr::BoolExpr {
                 span,
@@ -811,32 +799,6 @@ impl<'source> Parser<'source> {
         Ok(expr)
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr> {
-        #[cfg(feature = "rego-extensions")]
-        return self.parse_or_expr();
-
-        #[cfg(not(feature = "rego-extensions"))]
-        return self.parse_membership_expr();
-    }
-
-    #[cfg(feature = "rego-extensions")]
-    pub fn parse_or_expr(&mut self) -> Result<Expr> {
-        let start = self.tok.1.start;
-        let mut expr = self.parse_membership_expr()?;
-        while self.token_text() == "or" {
-            let mut span = self.tok.1.clone();
-            span.start = start;
-            self.next_token()?;
-            let rhs = self.parse_membership_expr()?;
-            expr = Expr::OrExpr {
-                span,
-                lhs: Ref::new(expr),
-                rhs: Ref::new(rhs),
-            };
-        }
-        Ok(expr)
-    }
-
     pub fn parse_membership_expr(&mut self) -> Result<Expr> {
         let start = self.tok.1.start;
         let mut expr = self.parse_bool_expr()?;
@@ -877,12 +839,12 @@ impl<'source> Parser<'source> {
             ":=" => AssignOp::ColEq,
             _ => {
                 *self = state;
-                return self.parse_expr();
+                return self.parse_membership_expr();
             }
         };
 
         self.next_token()?;
-        let right = self.parse_expr()?;
+        let right = self.parse_membership_expr()?;
         span.end = self.end;
         Ok(Expr::AssignExpr {
             span,
@@ -1064,29 +1026,6 @@ impl<'source> Parser<'source> {
         let mut literals = vec![];
 
         let stmt = match self.parse_literal_stmt() {
-            Ok(_) if self.token_text() == ":" => {
-                // This is likely an object comprehension.
-                // Restore the state and return.
-                *self = state;
-                bail!("try parsing as comprehension");
-            }
-            Ok(stmt) if self.token_text() == end_delim => {
-                // Treat { 1 | 1 } as a comprehension instead of a
-                // set of 1 element.
-                if let Literal::Expr { expr: e, .. } = &stmt.literal {
-                    if matches!(
-                        e.as_ref(),
-                        Expr::BinExpr {
-                            op: BinOp::Union,
-                            ..
-                        }
-                    ) {
-                        *self = state;
-                        bail!("try parse as comprehension");
-                    }
-                }
-                stmt
-            }
             Ok(stmt) => stmt,
             Err(e) if is_definite_query => return Err(e),
             Err(e) if matches!(self.token_text(), "=" | ":=") => return Err(e),
@@ -1148,7 +1087,7 @@ impl<'source> Parser<'source> {
             _ => return Ok(None),
         };
 
-        let expr = Ref::new(self.parse_expr()?);
+        let expr = Ref::new(self.parse_membership_expr()?);
         span.end = self.end;
         Ok(Some(RuleAssign {
             span,
@@ -1296,7 +1235,7 @@ impl<'source> Parser<'source> {
                 }
                 "[" => {
                     self.next_token()?;
-                    let index = self.parse_expr()?;
+                    let index = self.parse_membership_expr()?;
                     span.end = self.end;
                     self.expect("]", "while parsing bracketed reference")?;
                     term = Expr::RefBrack {
@@ -1344,7 +1283,7 @@ impl<'source> Parser<'source> {
             }
             "contains" => {
                 self.next_token()?;
-                let key = Ref::new(self.parse_expr()?);
+                let key = Ref::new(self.parse_membership_expr()?);
                 span.end = self.end;
                 Ok(RuleHead::Set {
                     span,
@@ -1709,7 +1648,10 @@ impl<'source> Parser<'source> {
 
             let is_future_kw =
                 if comps.len() == 2 && comps[0].text() == "rego" && comps[1].text() == "v1" {
-                    self.turn_on_rego_v1(span.clone())?;
+                    self.rego_v1 = true;
+                    for kw in FUTURE_KEYWORDS {
+                        self.set_future_keyword(kw, &span)?;
+                    }
                     true
                 } else {
                     self.handle_import_future_keywords(&comps)?

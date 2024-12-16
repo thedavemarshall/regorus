@@ -114,6 +114,7 @@ cases:
       x1: 100
       x2: 100
       x3: 100
+      x4: 100
 
   - note: negative
     data: {}

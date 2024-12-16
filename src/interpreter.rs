@@ -216,20 +216,16 @@ impl Interpreter {
         self.modules = modules.to_vec();
     }
 
+    pub fn set_init_data(&mut self, init_data: Value) {
+        self.init_data = init_data;
+    }
+
+    pub fn set_data(&mut self, data: Value) {
+        self.data = data;
+    }
+
     pub fn get_data_mut(&mut self) -> &mut Value {
         &mut self.data
-    }
-
-    pub fn set_init_data(&mut self, data: Value) {
-        self.init_data = data;
-    }
-
-    pub fn get_init_data(&self) -> &Value {
-        &self.init_data
-    }
-
-    pub fn get_init_data_mut(&mut self) -> &mut Value {
-        &mut self.init_data
     }
 
     pub fn set_traces(&mut self, enable_tracing: bool) {
@@ -484,12 +480,6 @@ impl Interpreter {
                 self.hoist_loops_impl(rhs, loops);
             }
 
-            #[cfg(feature = "rego-extensions")]
-            OrExpr { lhs, rhs, .. } => {
-                self.hoist_loops_impl(lhs, loops);
-                self.hoist_loops_impl(rhs, loops);
-            }
-
             Membership {
                 key,
                 value,
@@ -560,8 +550,8 @@ impl Interpreter {
         }
 
         match op {
-            BinOp::Union => builtins::sets::union(lhs, rhs, lhs_value, rhs_value),
-            BinOp::Intersection => builtins::sets::intersection(lhs, rhs, lhs_value, rhs_value),
+            BinOp::Or => builtins::sets::union(lhs, rhs, lhs_value, rhs_value),
+            BinOp::And => builtins::sets::intersection(lhs, rhs, lhs_value, rhs_value),
         }
     }
 
@@ -801,9 +791,10 @@ impl Interpreter {
                     }
                 }
             }
-            _ => {
-                r = false;
-            }
+            Value::Undefined | Value::Null => r = false,
+            // Other types cause every to evaluate to true even though
+            // it is supposed to happen only for empty domain.
+            _ => (),
         };
         self.contexts.pop();
         self.scopes.pop();
@@ -1564,10 +1555,6 @@ impl Interpreter {
         let mut obj = &mut self.data;
         let len = path.len();
         for (idx, p) in path.into_iter().enumerate() {
-            // Stop at the first undefined component in the path
-            if p == Value::Undefined {
-                break;
-            }
             if idx == len - 1 {
                 // last key.
                 if is_set {
@@ -1702,7 +1689,6 @@ impl Interpreter {
                 }
 
                 if output == Value::Undefined || !comps_defined {
-                    ctx.rule_value = Value::Undefined;
                     return Ok(false);
                 }
 
@@ -1882,14 +1868,14 @@ impl Interpreter {
             self.hoist_loops_impl(oe, &mut loops);
         }
 
-        let r = self.eval_output_expr_in_loop(&loops[..])?;
+        self.eval_output_expr_in_loop(&loops[..])?;
 
         let ctx = self.get_current_context()?;
         if let Some(_oe) = &ctx.output_expr {
             // Ensure that at least one output was generated.
-            Ok(ctx.rule_value != Value::Undefined)
+            Ok(ctx.value != Value::Undefined)
         } else {
-            Ok(r)
+            Ok(true)
         }
     }
 
@@ -2289,8 +2275,15 @@ impl Interpreter {
         };
 
         let mut param_values = Vec::with_capacity(params.len());
+        let mut error = None;
         for p in params {
-            param_values.push(self.eval_expr(p)?);
+            match self.eval_expr(p) {
+                Ok(v) => param_values.push(v),
+                Err(e) => {
+                    error = Some(Err(e));
+                    break;
+                }
+            }
         }
 
         let orig_fcn_path = fcn_path;
@@ -2307,6 +2300,9 @@ impl Interpreter {
                 if param_values.iter().any(|v| v == &Value::Undefined) {
                     return Ok(Value::Undefined);
                 }
+                if let Some(err) = error {
+                    err?;
+                };
                 return Ok(v.clone());
             }
             _ => orig_fcn_path.clone(),
@@ -2837,15 +2833,6 @@ impl Interpreter {
                 ..
             } => self.eval_membership(key, value, collection),
 
-            #[cfg(feature = "rego-extensions")]
-            Expr::OrExpr { lhs, rhs, .. } => {
-                let lhs = self.eval_expr(lhs)?;
-                match lhs {
-                    Value::Bool(false) | Value::Null | Value::Undefined => self.eval_expr(rhs),
-                    _ => Ok(lhs),
-                }
-            }
-
             // Creation expression
             Expr::Array { items, .. } => self.eval_array(items),
             Expr::Object { fields, .. } => self.eval_object(fields),
@@ -2958,6 +2945,7 @@ impl Interpreter {
                     });
                 }
                 result = self.eval_query(&body.query);
+
                 if matches!(&result, Ok(true) | Err(_)) {
                     break;
                 }
@@ -3141,8 +3129,6 @@ impl Interpreter {
             ArithExpr { span, .. } => ("arithexpr", span),
             AssignExpr { span, .. } => ("assignexpr", span),
             Membership { span, .. } => ("membership", span),
-            #[cfg(feature = "rego-extensions")]
-            OrExpr { span, .. } => ("orexpr", span),
         };
 
         Err(span.error(format!("invalid `{kind}` in default value").as_str()))

@@ -139,10 +139,9 @@ pub fn eval_file(
     query: &str,
     enable_tracing: bool,
     strict: bool,
-) -> Result<(Vec<Value>, Vec<String>)> {
+) -> Result<Vec<Value>> {
     let mut engine: Engine = Engine::new();
     engine.set_strict_builtin_errors(strict);
-    engine.set_gather_prints(true);
 
     #[cfg(feature = "coverage")]
     engine.set_enable_coverage(true);
@@ -207,7 +206,7 @@ pub fn eval_file(
         }
     }
 
-    Ok((results, engine.take_prints()?))
+    Ok(results)
 }
 
 #[derive(PartialEq, Debug)]
@@ -255,7 +254,6 @@ struct TestCase {
     query: String,
     sort_bindings: Option<bool>,
     want_result: Option<ValueOrVec>,
-    want_prints: Option<Vec<String>>,
     no_result: Option<bool>,
     skip: Option<bool>,
     error: Option<String>,
@@ -335,7 +333,7 @@ fn yaml_test_impl(file: &str) -> Result<()> {
             enable_tracing,
             case.strict,
         ) {
-            Ok((results, prints)) => match case.want_result {
+            Ok(results) => match case.want_result {
                 Some(want_result) => {
                     let mut expected_results = vec![];
                     match want_result {
@@ -346,18 +344,6 @@ fn yaml_test_impl(file: &str) -> Result<()> {
                     }
 
                     check_output(&results, &expected_results)?;
-                    if let Some(expected_prints) = case.want_prints {
-                        assert_eq!(expected_prints.len(), prints.len());
-                        for (idx, ep) in expected_prints.into_iter().enumerate() {
-                            if ep != prints[idx] {
-                                std::println!(
-                                    "print mismatch :\n{}",
-                                    prettydiff::diff_chars(&ep, &prints[idx])
-                                );
-                                panic!("exiting");
-                            }
-                        }
-                    }
                 }
                 _ if case.no_result == Some(true) => (),
                 _ => bail!("eval succeeded and did not produce any errors"),
@@ -385,11 +371,6 @@ fn yaml_test_impl(file: &str) -> Result<()> {
 }
 
 fn yaml_test(file: &str) -> Result<()> {
-    #[cfg(not(feature = "rego-extensions"))]
-    if file.contains("rego-extensions") {
-        return Ok(());
-    }
-
     match yaml_test_impl(file) {
         Ok(_) => Ok(()),
         Err(e) => {
@@ -426,33 +407,4 @@ fn one_yaml() -> Result<()> {
 #[test_resources("tests/interpreter/**/*.yaml")]
 fn run(path: &str) {
     yaml_test(path).unwrap()
-}
-
-#[test]
-fn test_get_data() -> Result<()> {
-    let mut engine = Engine::new();
-
-    // Merge { "x" : 1, "y" : {} }
-    engine.add_data(Value::from_json_str(r#"{ "x" : 1, "y" : {}}"#)?)?;
-
-    // Merge { "z" : 2 }
-    engine.add_data(Value::from_json_str(r#"{ "z" : 2 }"#)?)?;
-
-    // Add a policy
-    engine.add_policy("policy.rego".to_string(), "package a".to_string())?;
-
-    // Evaluate virtual data document. The virtual document includes all rules as well.
-    let v_data = engine.eval_query("data".to_string(), false)?.result[0].expressions[0]
-        .value
-        .clone();
-    // There must be an empty package.
-    assert_eq!(v_data["a"], Value::new_object());
-
-    // Get the data document.
-    let data = engine.get_data();
-
-    // There must NOT be any value of `a`.
-    assert_eq!(data["a"], Value::Undefined);
-
-    Ok(())
 }
