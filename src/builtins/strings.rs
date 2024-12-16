@@ -28,6 +28,7 @@ pub fn register(m: &mut builtins::BuiltinsMap<&'static str, builtins::BuiltinFcn
     m.insert("startswith", (startswith, 2));
     m.insert("strings.any_prefix_match", (any_prefix_match, 2));
     m.insert("strings.any_suffix_match", (any_suffix_match, 2));
+    m.insert("strings.count", (strings_count, 2));
     m.insert("strings.replace_n", (replace_n, 2));
     m.insert("strings.reverse", (reverse, 1));
     m.insert("substring", (substring, 3));
@@ -145,11 +146,18 @@ fn split(span: &Span, params: &[Ref<Expr>], args: &[Value], _strict: bool) -> Re
     let s = ensure_string(name, &params[0], &args[0])?;
     let delimiter = ensure_string(name, &params[1], &args[1])?;
 
-    Ok(Value::from_array(
+    // Handle https://github.com/microsoft/regorus/issues/291
+    let parts: Vec<Value> = if delimiter.as_ref() == "" {
+        // If delimiter is "", str::split returns a leading and trailing "" whereas Golang's split doesn't.
+        // Therefore avoid str::split and instead return each char as a Value::String.
+        s.chars().map(|c| Value::from(c.to_string())).collect()
+    } else {
         s.split(delimiter.as_ref())
             .map(|s| Value::String(s.into()))
-            .collect(),
-    ))
+            .collect()
+    };
+
+    Ok(Value::from(parts))
 }
 
 fn to_string(v: &Value, unescape: bool) -> String {
@@ -509,6 +517,27 @@ fn any_suffix_match(
 
     Ok(Value::Bool(
         search.iter().any(|s| base.iter().any(|b| s.ends_with(b))),
+    ))
+}
+
+fn strings_count(
+    span: &Span,
+    params: &[Ref<Expr>],
+    args: &[Value],
+    _strict: bool,
+) -> Result<Value> {
+    let name = "strings.count";
+    ensure_args_count(span, name, params, args, 2)?;
+
+    let search = ensure_string(name, &params[0], &args[0])?;
+    let substring = ensure_string(name, &params[0], &args[1])?;
+
+    Ok(Value::from(
+        search
+            .as_bytes()
+            .windows(substring.len())
+            .filter(|&w| w == substring.as_bytes())
+            .count(),
     ))
 }
 

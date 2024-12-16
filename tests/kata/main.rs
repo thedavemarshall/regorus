@@ -40,6 +40,7 @@ fn run_kata_tests(
         let policy_file = path.join("policy.rego");
         let inputs_file = path.join("inputs.txt");
         let outputs_file = path.join("outputs.json");
+        let prints_file = path.join("prints.json");
 
         let mut engine = Engine::new();
         engine.add_policy_from_file(&policy_file)?;
@@ -58,6 +59,19 @@ fn run_kata_tests(
                 .as_array()?
                 .iter()
                 .cloned()
+                .rev()
+                .collect()
+        };
+
+        let mut prints: Vec<Vec<String>> = if generate {
+            vec![]
+        } else {
+            let prints_json = std::fs::read_to_string(&prints_file).map_err(|e| {
+                anyhow::Error::msg(format!("could not read {}\n{e}", prints_file.display()))
+            })?;
+
+            serde_json::from_str::<Vec<Vec<String>>>(&prints_json)?
+                .into_iter()
                 .rev()
                 .collect()
         };
@@ -96,9 +110,14 @@ fn run_kata_tests(
 
             if generate {
                 results.push(r);
+                prints.push(engine.take_prints()?);
             } else {
                 let expected = results.pop().unwrap();
                 assert_eq!(r, expected, "{lineno} failed in {}", inputs_file.display());
+
+                let p = engine.take_prints()?;
+                assert_eq!(p, new_engine.take_prints()?);
+                assert_eq!(p, prints.pop().unwrap());
             }
 
             num_queries += 2;
@@ -106,13 +125,14 @@ fn run_kata_tests(
 
         if generate {
             std::fs::write(outputs_file, Value::from(results).to_json_str()?)?;
+            std::fs::write(prints_file, serde_json::to_string_pretty(&prints)?)?;
         }
 
         if coverage {
             #[cfg(feature = "coverage")]
             {
                 let report = engine.get_coverage_report()?;
-                println!("{}", report.to_colored_string()?);
+                println!("{}", report.to_string_pretty()?);
             }
         }
     }
@@ -152,6 +172,64 @@ struct Cli {
     generate: bool,
 }
 
+fn stateful_policy_test() -> Result<()> {
+    // Create an engine for evaluating Rego policies.
+    let mut engine = regorus::Engine::new();
+
+    let policy = String::from(
+        r#"
+       package example
+       import rego.v1
+
+       default allow := false
+
+       allow if {
+         print("data.allowed_actions = ", data.allowed_actions)
+         input.action in data.allowed_actions["user1"]
+         print("This rule should be allowed")
+       }
+	"#,
+    );
+
+    // Add policy to the engine.
+    engine.add_policy(String::from("policy.rego"), policy)?;
+
+    // Evaluate first input. Expect to evaluate to false, since state is not set
+    engine.set_input(regorus::Value::from_json_str(
+        r#"{
+      "action": "write"
+    }"#,
+    )?);
+
+    let r = engine.eval_bool_query(String::from("data.example.allow"), false)?;
+    println!("Received result: {:?}", r);
+    assert_eq!(r, false);
+
+    // Add data to engine. Set state
+    engine.add_data(regorus::Value::from_json_str(
+        r#"{
+     "allowed_actions": {
+        "user1" : ["read", "write"]
+     }}"#,
+    )?)?;
+
+    // Evaluate second input. Expect to evaluate to true, since state has been set now
+    engine.set_input(regorus::Value::from_json_str(
+        r#"{
+      "action": "write"
+    }"#,
+    )?);
+
+    let r = engine.eval_bool_query(String::from("data.example.allow"), false)?;
+    println!("Received result: {:?}", r);
+    assert_eq!(
+        r, true,
+        "expect result to be true since rule evaluates to true after state has been updated, per rego logs"
+    );
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     run_kata_tests(
@@ -159,5 +237,6 @@ fn main() -> Result<()> {
         &cli.name,
         cli.coverage,
         cli.generate,
-    )
+    )?;
+    stateful_policy_test()
 }

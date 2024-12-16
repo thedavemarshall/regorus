@@ -20,6 +20,7 @@ pub struct Engine {
     modules: Vec<Ref<Module>>,
     interpreter: Interpreter,
     prepared: bool,
+    rego_v1: bool,
 }
 
 /// Create a default engine.
@@ -36,7 +37,33 @@ impl Engine {
             modules: vec![],
             interpreter: Interpreter::new(),
             prepared: false,
+            rego_v1: false,
         }
+    }
+
+    /// Turn rego.v1 on/off for subsequently added policies.
+    ///
+    /// Explicit import rego.v1 is not needed if set.
+    ///
+    /// ```
+    /// # use regorus::*;
+    /// # fn main() -> anyhow::Result<()> {
+    /// let mut engine = Engine::new();
+    ///
+    /// engine.set_rego_v1(true);
+    /// engine.add_policy(
+    ///    "test.rego".to_string(),
+    ///    r#"
+    ///    package test
+    ///    allow if true # if keyword is automatically imported
+    ///    "#.to_string())?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    pub fn set_rego_v1(&mut self, rego_v1: bool) {
+        self.rego_v1 = rego_v1;
     }
 
     /// Add a policy.
@@ -67,7 +94,7 @@ impl Engine {
     ///
     pub fn add_policy(&mut self, path: String, rego: String) -> Result<String> {
         let source = Source::from_contents(path, rego)?;
-        let mut parser = Parser::new(&source)?;
+        let mut parser = self.make_parser(&source)?;
         let module = Ref::new(parser.parse()?);
         self.modules.push(module.clone());
         // if policies change, interpreter needs to be prepared again
@@ -95,9 +122,10 @@ impl Engine {
     /// # }
     /// ```
     #[cfg(feature = "std")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     pub fn add_policy_from_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<String> {
         let source = Source::from_file(path)?;
-        let mut parser = Parser::new(&source)?;
+        let mut parser = self.make_parser(&source)?;
         let module = Ref::new(parser.parse()?);
         self.modules.push(module.clone());
         // if policies change, interpreter needs to be prepared again
@@ -126,6 +154,66 @@ impl Engine {
             .iter()
             .map(|m| Interpreter::get_path_string(&m.package.refr, Some("data")))
             .collect()
+    }
+
+    /// Get the list of policy files.
+    /// ```
+    /// # use regorus::*;
+    /// # fn main() -> anyhow::Result<()> {
+    /// # let mut engine = Engine::new();
+    ///
+    /// let pkg = engine.add_policy("hello.rego".to_string(), "package test".to_string())?;
+    /// assert_eq!(pkg, "data.test");
+    ///
+    /// let policies = engine.get_policies()?;
+    ///
+    /// assert_eq!(policies[0].get_path(), "hello.rego");
+    /// assert_eq!(policies[0].get_contents(), "package test");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_policies(&self) -> Result<Vec<Source>> {
+        Ok(self
+            .modules
+            .iter()
+            .map(|m| m.package.refr.span().source.clone())
+            .collect())
+    }
+
+    /// Get the list of policy files as a JSON object.
+    /// ```
+    /// # use regorus::*;
+    /// # fn main() -> anyhow::Result<()> {
+    /// # let mut engine = Engine::new();
+    ///
+    /// let pkg = engine.add_policy("hello.rego".to_string(), "package test".to_string())?;
+    /// assert_eq!(pkg, "data.test");
+    ///
+    /// let policies = engine.get_policies_as_json()?;
+    ///
+    /// let v = Value::from_json_str(&policies)?;
+    /// assert_eq!(v[0]["path"].as_string()?.as_ref(), "hello.rego");
+    /// assert_eq!(v[0]["contents"].as_string()?.as_ref(), "package test");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_policies_as_json(&self) -> Result<String> {
+        #[derive(Serialize)]
+        struct Source<'a> {
+            path: &'a String,
+            contents: &'a String,
+        }
+
+        let mut sources = vec![];
+        for m in self.modules.iter() {
+            let source = &m.package.refr.span().source;
+            sources.push(Source {
+                path: source.get_path(),
+                contents: source.get_contents(),
+            });
+        }
+
+        serde_json::to_string_pretty(&sources).map_err(anyhow::Error::msg)
     }
 
     /// Set the input document.
@@ -178,7 +266,7 @@ impl Engine {
     /// # }
     /// ```
     pub fn clear_data(&mut self) {
-        self.interpreter.set_data(Value::new_object());
+        self.interpreter.set_init_data(Value::new_object());
         self.prepared = false;
     }
 
@@ -215,7 +303,40 @@ impl Engine {
             bail!("data must be object");
         }
         self.prepared = false;
-        self.interpreter.get_data_mut().merge(data)
+        self.interpreter.get_init_data_mut().merge(data)
+    }
+
+    /// Get the data document.
+    ///
+    /// The returned value is the data document that has been constructed using
+    /// one or more calls to [`Engine::add_data`]. The values of policy rules are
+    /// not included in the returned document.
+    ///
+    ///
+    /// ```
+    /// # use regorus::*;
+    /// # fn main() -> anyhow::Result<()> {
+    /// let mut engine = Engine::new();
+    ///
+    /// // If not set, data document is empty.
+    /// assert_eq!(engine.get_data(), Value::new_object());
+    ///
+    /// // Merge { "x" : 1, "y" : {} }
+    /// assert!(engine.add_data(Value::from_json_str(r#"{ "x" : 1, "y" : {}}"#)?).is_ok());
+    ///
+    /// // Merge { "z" : 2 }
+    /// assert!(engine.add_data(Value::from_json_str(r#"{ "z" : 2 }"#)?).is_ok());
+    ///
+    /// let data = engine.get_data();
+    /// assert_eq!(data["x"], Value::from(1));
+    /// assert_eq!(data["y"], Value::new_object());
+    /// assert_eq!(data["z"], Value::from(2));
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_data(&self) -> Value {
+        self.interpreter.get_init_data().clone()
     }
 
     pub fn add_data_json(&mut self, data_json: &str) -> Result<()> {
@@ -239,7 +360,7 @@ impl Engine {
         &self.modules
     }
 
-    /// Evaluate rule(s) at given path.
+    /// Evaluate specified rule(s).
     ///
     /// [`Engine::eval_rule`] is often faster than [`Engine::eval_query`] and should be preferred if
     /// OPA style [`QueryResults`] are not needed.
@@ -279,10 +400,10 @@ impl Engine {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn eval_rule(&mut self, path: String) -> Result<Value> {
+    pub fn eval_rule(&mut self, rule: String) -> Result<Value> {
         self.prepare_for_eval(false)?;
         self.interpreter.clean_internal_evaluation_state();
-        self.interpreter.eval_rule_in_path(path)
+        self.interpreter.eval_rule_in_path(rule)
     }
 
     /// Evaluate a Rego query.
@@ -334,7 +455,7 @@ impl Engine {
 
         // Parse the query.
         let query_source = Source::from_contents("<query.rego>".to_string(), query)?;
-        let mut parser = Parser::new(&query_source)?;
+        let mut parser = self.make_parser(&query_source)?;
         let query_node = parser.parse_user_query()?;
         if query_node.span.text() == "data" {
             self.eval_modules(enable_tracing)?;
@@ -451,7 +572,7 @@ impl Engine {
 
         // Parse the query.
         let query_source = Source::from_contents("<query.rego>".to_string(), query)?;
-        let mut parser = Parser::new(&query_source)?;
+        let mut parser = self.make_parser(&query_source)?;
         let query_node = parser.parse_user_query()?;
         let query_schedule = Analyzer::new().analyze_query_snippet(&self.modules, &query_node)?;
         self.interpreter.eval_user_query(
@@ -476,11 +597,7 @@ impl Engine {
             self.interpreter.set_modules(&self.modules);
 
             self.interpreter.clear_builtins_cache();
-            // when the interpreter is prepared the initial data is saved
-            // the data will be reset to init_data each time clean_internal_evaluation_state is called
-            let init_data = self.interpreter.get_data_mut().clone();
-            self.interpreter.set_init_data(init_data);
-
+            // clean_internal_evaluation_state will set data to an efficient clont of use supplied init_data
             // Initialize the with-document with initial data values.
             // with-modifiers will be applied to this document.
             self.interpreter.init_with_document()?;
@@ -644,7 +761,7 @@ impl Engine {
     }
 
     #[cfg(feature = "coverage")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "coverage")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "coverage")))]
     /// Get the coverage report.
     ///
     /// ```rust
@@ -688,7 +805,7 @@ impl Engine {
     }
 
     #[cfg(feature = "coverage")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "coverage")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "coverage")))]
     /// Enable/disable policy coverage.
     ///
     /// If `enable` is different from the current value, then any existing coverage
@@ -698,7 +815,7 @@ impl Engine {
     }
 
     #[cfg(feature = "coverage")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "coverage")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "coverage")))]
     /// Clear the gathered policy coverage data.
     pub fn clear_coverage_data(&mut self) {
         self.interpreter.clear_coverage_data()
@@ -741,5 +858,51 @@ impl Engine {
     /// ```
     pub fn take_prints(&mut self) -> Result<Vec<String>> {
         self.interpreter.take_prints()
+    }
+
+    /// Get the policies and corresponding AST.
+    ///
+    ///
+    /// ```rust
+    /// # use regorus::*;
+    /// # use anyhow::{bail, Result};
+    /// # fn main() -> Result<()> {
+    /// # let mut engine = Engine::new();
+    /// engine.add_policy("test.rego".to_string(), "package test\n x := 1".to_string())?;
+    ///
+    /// let ast = engine.get_ast_as_json()?;
+    /// let value = Value::from_json_str(&ast)?;
+    ///
+    /// assert_eq!(value[0]["ast"]["package"]["refr"]["Var"][1].as_string()?.as_ref(), "test");
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "ast")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ast")))]
+    pub fn get_ast_as_json(&self) -> Result<String> {
+        #[derive(Serialize)]
+        struct Policy<'a> {
+            source: &'a Source,
+            version: u32,
+            ast: &'a Module,
+        }
+        let mut ast = vec![];
+        for m in &self.modules {
+            ast.push(Policy {
+                source: &m.package.span.source,
+                version: 1,
+                ast: m,
+            });
+        }
+
+        serde_json::to_string_pretty(&ast).map_err(anyhow::Error::msg)
+    }
+
+    fn make_parser<'a>(&self, source: &'a Source) -> Result<Parser<'a>> {
+        let mut parser = Parser::new(source)?;
+        if self.rego_v1 {
+            parser.enable_rego_v1()?;
+        }
+        Ok(parser)
     }
 }
