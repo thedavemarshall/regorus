@@ -20,8 +20,8 @@ or manually install checkout the source and build the gem
 `
 git clone https://github.com/microsoft/regorus/
 cd regorus/bindings/ruby
-rake && rake build # should eventually output 'regorusrb 0.1.0 built to pkg/regorusrb-0.1.0.gem.'
-gem install --local ./pkg/regorusrb-0.1.0.gem
+rake && rake build # should eventually output 'regorusrb 0.2.2 built to pkg/regorusrb-0.2.2.gem.'
+gem install --local ./pkg/regorusrb-0.2.2.gem
 `
 
 It is not yet available in rubygems.
@@ -34,7 +34,7 @@ To build this gem locally without bundler,
 
 then to install the gem and build the native extensions
 
-`gem install --local ./pkg/regorusrb-0.1.0.gem`
+`gem install --local ./pkg/regorusrb-0.2.2.gem`
 
 ## Usage
 
@@ -97,3 +97,6 @@ To update the gem version or dependencies within `bindings/ruby/Gemfile.lock`, r
 
 After checking out the repo, `cd bindings/ruby` and run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 
+## Releasing new versions
+
+Be sure to update the ruby constant [`Regorus::VERSION`](https://github.com/microsoft/regorus/blob/main/bindings/ruby/lib/regorus/version.rb#L4) as well as the rust (package version)[https://github.com/microsoft/regorus/blob/main/bindings/ruby/ext/regorusrb/Cargo.toml#L3]
