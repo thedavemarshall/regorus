@@ -10,8 +10,8 @@ Gem::Specification.new do |spec|
   spec.summary = "Ruby bindings for Regorus - a fast, lightweight Rego interpreter written in Rust"
   spec.homepage = "https://github.com/microsoft/regorus/blob/main/bindings/ruby"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.0.0"
-  spec.required_rubygems_version = ">= 3.3.11"
+  spec.required_ruby_version = ">= 3.1.6"
+  spec.required_rubygems_version = ">= 3.3.27"
 
   spec.metadata["allowed_push_host"] = "TODO: Set to your gem server 'https://example.com'"
 
@@ -26,5 +26,5 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
   spec.extensions = ["ext/regorusrb/extconf.rb"]
-  spec.add_dependency "rb_sys", "~> 0.9.97"
+  spec.add_dependency "rb_sys", "~> 0.9.110"
 end
