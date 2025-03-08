@@ -10,6 +10,7 @@ class TestRegorus < Minitest::Test
 
   def setup
     @engine = ::Regorus::Engine.new
+    @engine.set_rego_v0(true)
     @engine.add_policy("regorus_test.rego", example_policy)
     @engine.add_data(example_data)
   end

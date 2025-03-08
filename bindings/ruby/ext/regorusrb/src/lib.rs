@@ -275,6 +275,11 @@ impl Engine {
         })
     }
 
+    fn set_rego_v0(&self, enable: bool) -> Result<(), Error> {
+        self.engine.borrow_mut().set_rego_v0(enable);
+        Ok(())
+    }
+
     #[cfg(feature = "ast")]
     fn get_ast_as_json(&self) -> Result<String, Error> {
         self.engine
@@ -352,6 +357,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     // print statements
     engine_class.define_method("set_gather_prints", method!(Engine::set_gather_prints, 1))?;
     engine_class.define_method("take_prints", method!(Engine::take_prints, 0))?;
+
+    engine_class.define_method("set_rego_v0", method!(Engine::set_rego_v0, 1))?;
 
     // ast
     engine_class.define_method("get_ast_as_json", method!(Engine::get_ast_as_json, 0))?;
